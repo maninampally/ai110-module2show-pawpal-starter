@@ -16,6 +16,7 @@ class Owner:
 	owner_id: str
 	name: str
 	daily_time_budget_minutes: int
+	pets: list[Pet] = field(default_factory=list)
 	preferred_time_windows: list[tuple[time, time]] = field(default_factory=list)
 	notification_preferences: dict[str, Any] = field(default_factory=dict)
 
@@ -99,11 +100,10 @@ class CareTask:
 class TaskList:
 	"""Container for all tasks belonging to one pet."""
 
-	def __init__(self, owner_id: str = "", pet_id: str = "") -> None:
+	def __init__(self, pet: Pet | None = None) -> None:
 		"""Initialize an empty task list for a pet."""
 		self.tasks: list[CareTask] = []
-		self.owner_id: str = owner_id
-		self.pet_id: str = pet_id
+		self.pet: Pet | None = pet
 
 	def add_task(self, task: CareTask) -> None:
 		"""Add a new task to the list."""
@@ -158,10 +158,6 @@ class DailyConstraint:
 
 	def remaining_minutes(self) -> int:
 		"""Calculate how many minutes are left after scheduled tasks."""
-		pass
-
-	def apply_blocked_time(self) -> None:
-		"""Mark time range as unavailable."""
 		pass
 
 
