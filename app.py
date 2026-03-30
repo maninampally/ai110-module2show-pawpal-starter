@@ -235,17 +235,34 @@ with tab3:
             scheduler = Scheduler(strategy_name="priority-first")
             daily_plan = scheduler.build_plan(combined_task_list, constraint)
             
+            # Define category and priority emoji mappings
+            category_emoji = {
+                "walk": "🚶",
+                "feeding": "🍽️",
+                "medication": "💊",
+                "grooming": "✂️",
+                "enrichment": "🎾",
+                "appointment": "🏥",
+                "other": "📌"
+            }
+            priority_emoji = {
+                "high": "🔴",
+                "medium": "🟡",
+                "low": "🟢"
+            }
+            
             # Display results
             st.markdown("### Schedule Generated")
             
             # Summary stats
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Total Tasks", total_tasks)
+                st.metric("Tasks Scheduled", len(daily_plan.entries))
             with col2:
-                st.metric("Scheduled", len(daily_plan.entries))
+                st.metric("Time Used", f"{daily_plan.total_scheduled_minutes} min")
             with col3:
-                st.metric("Time Used", f"{daily_plan.total_scheduled_minutes} / {available_minutes} min")
+                time_remaining = available_minutes - daily_plan.total_scheduled_minutes
+                st.metric("Time Remaining", f"{time_remaining} min")
             
             # Scheduled tasks table
             if daily_plan.entries:
@@ -253,11 +270,15 @@ with tab3:
                 
                 schedule_table_data = []
                 for entry in sorted(daily_plan.entries, key=lambda e: e.start_time):
+                    category_icon = category_emoji.get(entry.task.category, "📌")
+                    priority_icon = priority_emoji.get(entry.task.priority, "⚪")
+                    task_display = f"{category_icon} {priority_icon} {entry.task.title}"
+                    
                     schedule_table_data.append({
                         "Time": f"{entry.start_time.strftime('%H:%M')} - {entry.end_time.strftime('%H:%M')}",
-                        "Task": entry.task.title,
+                        "Task": task_display,
                         "Duration": f"{entry.duration()} min",
-                        "Priority": entry.task.priority,
+                        "Priority": entry.task.priority.capitalize(),
                     })
                 
                 st.table(schedule_table_data)
