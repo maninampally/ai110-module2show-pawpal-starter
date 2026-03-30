@@ -22,19 +22,20 @@ class Owner:
 
 	def update_profile(self, name: str | None = None) -> None:
 		"""Update owner name or other profile settings."""
-		pass
+		if name is not None:
+			self.name = name
 
 	def set_time_budget(self, minutes: int) -> None:
 		"""Change daily available minutes for pet care."""
-		pass
+		self.daily_time_budget_minutes = minutes
 
 	def set_preferences(self, preferences: dict[str, Any]) -> None:
 		"""Update notification preferences."""
-		pass
+		self.notification_preferences = preferences
 
 	def get_available_time(self) -> int:
 		"""Return current daily time budget in minutes."""
-		pass
+		return self.daily_time_budget_minutes
 
 
 @dataclass
@@ -50,15 +51,20 @@ class Pet:
 
 	def update_pet_info(self, name: str | None = None, age: int | None = None) -> None:
 		"""Update pet's name or age."""
-		pass
+		if name is not None:
+			self.name = name
+		if age is not None:
+			self.age = age
 
 	def add_health_note(self, note: str) -> None:
 		"""Log new health information for the pet."""
-		pass
+		self.health_notes.append(note)
 
 	def get_care_needs_summary(self) -> str:
 		"""Return text description of pet's care requirements."""
-		pass
+		notes_str = "; ".join(self.health_notes) if self.health_notes else "No notes"
+		return f"{self.name} ({self.species}, age {self.age}) — activity: {self.activity_level}, notes: {notes_str}"
+
 
 
 # ============================================================================
@@ -82,19 +88,23 @@ class CareTask:
 
 	def validate(self) -> bool:
 		"""Check if task data is valid (has required fields)."""
-		pass
+		return bool(self.title) and self.duration_minutes > 0
 
 	def mark_complete(self) -> None:
 		"""Record that task was completed."""
-		pass
+		self.completion_status = True
 
 	def update_task(self, **changes: Any) -> None:
 		"""Modify any task property."""
-		pass
+		for key, value in changes.items():
+			if hasattr(self, key):
+				setattr(self, key, value)
 
 	def is_overdue(self, current_time: datetime) -> bool:
 		"""Check if task is past its due time."""
-		pass
+		if self.due_time_optional is None:
+			return False
+		return self.due_time_optional < current_time
 
 
 class TaskList:
@@ -107,27 +117,32 @@ class TaskList:
 
 	def add_task(self, task: CareTask) -> None:
 		"""Add a new task to the list."""
-		pass
+		self.tasks.append(task)
 
 	def edit_task(self, task_id: str, **changes: Any) -> None:
 		"""Modify an existing task."""
-		pass
+		for task in self.tasks:
+			if task.task_id == task_id:
+				task.update_task(**changes)
+				return
 
 	def remove_task(self, task_id: str) -> None:
 		"""Delete a task by ID."""
-		pass
+		self.tasks = [task for task in self.tasks if task.task_id != task_id]
 
 	def get_tasks_by_priority(self) -> list[CareTask]:
 		"""Return tasks sorted by priority (high → medium → low)."""
-		pass
+		priority_order = {"high": 0, "medium": 1, "low": 2}
+		return sorted(self.tasks, key=lambda t: priority_order.get(t.priority, 3))
 
 	def get_required_tasks(self) -> list[CareTask]:
 		"""Return only tasks where is_required = True."""
-		pass
+		return [task for task in self.tasks if task.is_required]
 
 	def get_total_duration(self) -> int:
 		"""Sum total minutes needed for all tasks."""
-		pass
+		return sum(task.duration_minutes for task in self.tasks)
+
 
 
 # ============================================================================
@@ -154,11 +169,12 @@ class DailyConstraint:
 
 	def can_fit(self, task: CareTask) -> bool:
 		"""Check if a specific task fits within constraints."""
-		pass
+		return task.duration_minutes <= self.available_minutes
 
 	def remaining_minutes(self) -> int:
 		"""Calculate how many minutes are left after scheduled tasks."""
-		pass
+		return self.available_minutes
+
 
 
 # ============================================================================
@@ -177,15 +193,18 @@ class ScheduleEntry:
 
 	def duration(self) -> int:
 		"""Return minutes this entry takes."""
-		pass
+		delta = self.end_time - self.start_time
+		return int(delta.total_seconds() / 60)
 
 	def overlaps_with(self, other_entry: ScheduleEntry) -> bool:
 		"""Check if this entry conflicts with another ScheduleEntry."""
-		pass
+		return not (self.end_time <= other_entry.start_time or self.start_time >= other_entry.end_time)
 
 	def to_display_text(self) -> str:
 		"""Format nicely for UI (e.g., '9:30 AM - Walk Buddy (20 min)')."""
-		pass
+		start_str = self.start_time.strftime("%H:%M")
+		end_str = self.end_time.strftime("%H:%M")
+		return f"{start_str} - {end_str} | {self.task.title} ({self.duration()} min)"
 
 
 @dataclass
@@ -200,23 +219,38 @@ class DailyPlan:
 
 	def add_entry(self, entry: ScheduleEntry) -> None:
 		"""Add a scheduled task to the plan."""
-		pass
+		self.entries.append(entry)
+		self.total_scheduled_minutes += entry.duration()
 
 	def add_unscheduled_task(self, task: CareTask) -> None:
 		"""Mark a task as not scheduled."""
-		pass
+		self.unscheduled_tasks.append(task)
 
 	def sort_by_time(self) -> None:
 		"""Sort entries chronologically."""
-		pass
+		self.entries.sort(key=lambda e: e.start_time)
 
 	def generate_summary(self) -> str:
 		"""Create text summary of the plan."""
-		pass
+		self.sort_by_time()
+		summary_lines = [f"Daily Plan for {self.date}"]
+		summary_lines.append("=" * 50)
+		for entry in self.entries:
+			summary_lines.append(entry.to_display_text())
+		if self.unscheduled_tasks:
+			summary_lines.append("\nUnscheduled Tasks:")
+			for task in self.unscheduled_tasks:
+				summary_lines.append(f"  - {task.title} ({task.priority} priority, {task.duration_minutes} min)")
+		summary_lines.append(f"\nTotal Scheduled: {self.total_scheduled_minutes} minutes")
+		return "\n".join(summary_lines)
 
 	def validate_plan(self) -> bool:
 		"""Check for conflicts or errors in the plan."""
-		pass
+		for i, entry1 in enumerate(self.entries):
+			for entry2 in self.entries[i + 1 :]:
+				if entry1.overlaps_with(entry2):
+					return False
+		return True
 
 
 # ============================================================================
@@ -243,23 +277,79 @@ class Scheduler:
 
 	def build_plan(self, task_list: TaskList, constraints: DailyConstraint) -> DailyPlan:
 		"""Main method: takes tasks + constraints, returns optimized plan."""
-		pass
+		ranked_tasks = self.rank_tasks(task_list.tasks)
+		plan = DailyPlan(date=constraints.date)
+		
+		# Start scheduling at 06:00
+		current_time = datetime.combine(constraints.date, time(6, 0))
+		end_of_day = datetime.combine(constraints.date, time(22, 0))
+		available_minutes = constraints.available_minutes
+		
+		for task in ranked_tasks:
+			if current_time.time() >= time(22, 0):
+				plan.add_unscheduled_task(task)
+				continue
+			
+			# Check if task fits
+			if task.duration_minutes <= available_minutes:
+				# Create schedule entry
+				task_end = current_time + timedelta(minutes=task.duration_minutes)
+				
+				# Don't go past 22:00
+				if task_end > end_of_day:
+					plan.add_unscheduled_task(task)
+					continue
+				
+				entry = ScheduleEntry(
+					task=task,
+					start_time=current_time,
+					end_time=task_end,
+					reason_selected=f"Priority: {task.priority}, Required: {task.is_required}",
+					score=self.priority_weights.get(task.priority, 0),
+				)
+				plan.add_entry(entry)
+				available_minutes -= task.duration_minutes
+				current_time = task_end
+			else:
+				plan.add_unscheduled_task(task)
+		
+		self.handle_conflicts(plan)
+		plan.explanation_summary = self.explain_decisions(plan)
+		return plan
 
 	def rank_tasks(self, tasks: list[CareTask]) -> list[CareTask]:
 		"""Sort tasks by priority and scoring logic."""
-		pass
+		# Sort: required first, then by priority
+		priority_order = {"high": 0, "medium": 1, "low": 2}
+		return sorted(
+			tasks,
+			key=lambda t: (not t.is_required, priority_order.get(t.priority, 3))
+		)
 
 	def allocate_time_slots(self, tasks: list[CareTask], plan: DailyPlan) -> None:
 		"""Assign start/end times to each task."""
+		# This is handled in build_plan
 		pass
 
 	def handle_conflicts(self, plan: DailyPlan) -> None:
 		"""Resolve overlapping tasks."""
-		pass
+		for i, entry1 in enumerate(plan.entries):
+			for entry2 in plan.entries[i + 1 :]:
+				if entry1.overlaps_with(entry2):
+					entry1.reason_selected += " [CONFLICT]"
+					entry2.reason_selected += " [CONFLICT]"
 
 	def explain_decisions(self, plan: DailyPlan) -> str:
 		"""Generate reasoning for scheduling decisions."""
-		pass
+		lines = ["Scheduling Summary:"]
+		lines.append(f"✓ Scheduled ({len(plan.entries)} tasks, {plan.total_scheduled_minutes} min):")
+		for entry in plan.entries:
+			lines.append(f"  - {entry.task.title}: {entry.reason_selected}")
+		if plan.unscheduled_tasks:
+			lines.append(f"✗ Unscheduled ({len(plan.unscheduled_tasks)} tasks):")
+			for task in plan.unscheduled_tasks:
+				lines.append(f"  - {task.title}: No time remaining")
+		return "\n".join(lines)
 
 
 # ============================================================================
@@ -280,12 +370,22 @@ class PlanExplainer:
 
 	def explain_task_choice(self, task: CareTask, score: float) -> str:
 		"""Explain why this task was included in the schedule."""
-		pass
+		reason = f"✓ {task.title} scheduled (score: {score})"
+		if task.is_required:
+			reason += " — Required task"
+		reason += f" — Priority: {task.priority}"
+		return reason
 
 	def explain_skipped_task(self, task: CareTask, reason: str) -> str:
 		"""Explain why this task was not included in the schedule."""
-		pass
+		return f"✗ {task.title} not scheduled — {reason}"
 
 	def generate_plan_explanation(self, plan: DailyPlan) -> str:
 		"""Generate full explanation of the entire day's plan."""
-		pass
+		lines = [f"Plan for {plan.date}:", ""]
+		lines.append(f"Total scheduled: {plan.total_scheduled_minutes} minutes")
+		lines.append(f"Scheduled tasks: {len(plan.entries)}")
+		lines.append(f"Unscheduled tasks: {len(plan.unscheduled_tasks)}")
+		lines.append("")
+		lines.append(plan.explanation_summary)
+		return "\n".join(lines)
