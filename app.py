@@ -262,20 +262,22 @@ with tab3:
                 
                 st.table(schedule_table_data)
             
-            # Unscheduled tasks
+            # Conflict Detection
+            conflicts = scheduler.detect_scheduling_conflicts(daily_plan)
+            if conflicts:
+                st.subheader("⚠️ Scheduling Conflicts Detected")
+                for conflict in conflicts:
+                    st.warning(conflict['message'])
+            
+            # Scheduling Explanation
+            with st.expander("📋 Scheduling Explanation", expanded=False):
+                st.write(daily_plan.explanation_summary)
+            
+            # Unscheduled Tasks
             if daily_plan.unscheduled_tasks:
-                st.warning(f"⚠️ {len(daily_plan.unscheduled_tasks)} Tasks Did Not Fit")
-                
-                unscheduled_data = []
-                for task in daily_plan.unscheduled_tasks:
-                    unscheduled_data.append({
-                        "Task": task.title,
-                        "Duration": f"{task.duration_minutes} min",
-                        "Priority": task.priority,
-                        "Required": "✓" if task.is_required else "✗"
-                    })
-                
-                st.table(unscheduled_data)
+                with st.expander(f"⚠️ Unscheduled Tasks ({len(daily_plan.unscheduled_tasks)})", expanded=False):
+                    for task in daily_plan.unscheduled_tasks:
+                        st.warning(f"**{task.title}** — {task.duration_minutes} min ({task.priority} priority)")
             
             # Validation status
             if daily_plan.validate_plan():
