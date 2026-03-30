@@ -59,17 +59,7 @@ Yes, design evolved after Copilot reviewed the skeleton:
 
 **a. Constraints and priorities**
 
-The scheduler considers three main constraints:
-1. **Time Budget**: Total available minutes per day (set by owner; typically 120 min)
-2. **Task Duration**: Each task requires a fixed number of minutes
-3. **Operating Hours**: Tasks scheduled between 06:00 and 22:00 (16-hour window)
-
-Priority order:
-- Required tasks scheduled first (must have)
-- Then by priority weight: high > medium > low
-- Within same priority, first-come-first-served
-
-**Why it matters:** Required tasks (e.g., medication) cannot be skipped. High-priority tasks (e.g., walking) are typically health/behavior essentials. This ordering ensures critical pet care happens first.
+My scheduler considers three constraints: total available time (daily_time_budget_minutes), task priority (high/medium/low), and required status (is_required). I decided required tasks matter most because missing a medication or feeding has real consequences for the pet, so those always schedule first regardless of priority level.
 
 **b. Tradeoffs**
 
@@ -93,36 +83,11 @@ The scheduler uses a single-pass sort for `rank_tasks()` which is efficient but 
 
 **a. How you used AI**
 
-Used AI (Copilot) for:
-1. **Design brainstorming**: Proposed the 9-class layered architecture; helped refine which classes belonged in which layer
-2. **UML visualization**: Generated Mermaid diagram representing class relationships and data flow
-3. **Code scaffolding**: Created method stubs with docstrings for all classes
-4. **Implementation guidance**: Advised on dataclass use, type hints, and parameter validation
-5. **Test generation**: Suggested comprehensive pytest structure with fixtures, parametrized tests, edge cases
-6. **Debugging**: Clarified confusing method signatures (e.g., what `apply_blocked_time()` should do)
-
-**Most helpful prompts:**
-- "Here's my UML design [diagram]. Does this architecture make sense? Any suggestions?" → Led to pet_list addition
-- "How should I structure TaskList.get_tasks_by_priority()?" → Clear implementation guidance with sorting logic
-- "Write a main.py demo that creates an Owner, Pets, Tasks, and generates a schedule" → Validated entire system end-to-end
-- "Generate a comprehensive pytest suite for pawpal_system.py" → 30 well-organized tests covering all key behaviors
+I used Copilot for four things: generating class skeletons from my UML, implementing method bodies, drafting test functions, and reviewing my design for missing relationships. The most helpful prompts were specific ones that included rules (e.g. "use @dataclass for these classes, regular class for these others"). Vague prompts produced over-engineered results.
 
 **b. Judgment and verification**
 
-**Moment 1: Rejected circular dependency suggestion**
-- AI suggested: "Add owner_id to DailyConstraint so it knows who the owner is"
-- Why rejected: Would create Owner ↔ DailyConstraint circularity; DailyConstraint should be independent of specific owner
-- How verified: Traced data flow — DailyConstraint is created fresh each day; doesn't need owner context
-
-**Moment 2: Kept "constraint_rules" dict despite minimalism push**
-- AI suggested: "Remove constraint_rules and explanation_rules dicts — just hardcode logic"
-- Why kept: These dicts make strategy-swapping possible (future feature: "balanced" vs "speed" vs "health-first" scheduling)
-- How verified: Imagined adding new strategy without dict — would require duplicating entire Scheduler class
-
-**Moment 3: Validated greedy algorithm choice**
-- AI suggested: "Consider implementing A* or dynamic programming for optimal scheduling"
-- Why rejected (for MVP): Overcomplicated; main.py demo showed greedy works for typical scenarios
-- How verified: Ran demo with 6 tasks, 120-min budget — greedy produced 100% valid schedule with good time utilization (110/120 min used)
+Copilot suggested removing notification_preferences and constraint_rules as "over-engineered". I rejected this because they are harmless empty dicts that leave room for future features without adding complexity now. I verified by checking that no existing logic depended on them being absent.
 
 ---
 
@@ -132,76 +97,11 @@ Used AI (Copilot) for:
 
 **a. What you tested**
 
-Created `tests/test_pawpal.py` with **30 pytest test cases** organized in 6 test classes:
-
-**CareTask tests (8 tests):**
-- Valid task validation passes; invalid (empty title, zero duration) fail
-- Marking complete changes completion_status
-- Updating task modifies attributes
-- Overdue detection: returns False with no due time, True if past due, False if before due
-
-**TaskList tests (5 tests):**
-- Adding/removing tasks updates count
-- get_tasks_by_priority sorts correctly (high → medium → low)
-- get_required_tasks filters to only required=True
-- get_total_duration sums all task durations
-
-**ScheduleEntry tests (4 tests):**
-- duration() calculates end_time - start_time
-- overlaps_with() detects overlapping entries; non-overlapping returns False
-- to_display_text() formats time and task info correctly
-
-**DailyPlan tests (3 tests):**
-- add_entry() increments total_scheduled_minutes
-- validate_plan() returns True for non-overlapping entries
-- validate_plan() returns False if entries overlap
-
-**Scheduler tests (4 tests):**
-- rank_tasks() prioritizes required tasks first
-- rank_tasks() sorts by priority (high → medium → low)
-- build_plan() creates schedule entries
-- build_plan() respects time limit (doesn't schedule beyond available_minutes)
-
-**Pet and Owner tests (6 tests):**
-- add_health_note() and health_notes list works
-- update_pet_info() modifies name, age, etc.
-- get_care_needs_summary() returns text with pet name/species/age
-- set_time_budget() updates daily_time_budget_minutes
-- get_available_time() returns budget
-- update_profile() modifies owner attributes
-
-**Why these tests matter:**
-- Core classes (CareTask, TaskList, Scheduler) represent the business logic; failures here break the whole system
-- ScheduleEntry and DailyPlan handle the output; must ensure times are correct, no overlaps
-- Edge cases (overdue checking, conflict detection) are where bugs hide
-- Together, tests verify that the system can create realistic schedules without errors
+I tested task validation, completion marking, priority sorting, recurring task generation, conflict detection, and status filtering — 38 tests total. These were important because the scheduler's correctness depends entirely on ranking and time allocation working correctly.
 
 **b. Confidence**
 
-**Very high confidence (95%+) that scheduler works correctly:**
-- All 30 tests pass ✓
-- main.py demo created realistic schedule with 6 tasks, no conflicts, good time utilization ✓
-- validate_plan() correctly detects overlaps (tested with both overlapping and non-overlapping entries) ✓
-- rank_tasks() correctly prioritizes required + high-priority tasks ✓
-
-**What I'm confident about:**
-1. **Scheduling algorithm is sound**: Greedy ranking + time slot allocation works as intended
-2. **Data structures are reliable**: Tasks persist, lists update correctly, constraints are enforced
-3. **No runtime crashes**: All 30 tests run to completion; no import errors, no type errors
-4. **Output is valid**: Formatted schedule timestamps are correct; plans validate without errors
-
-**Edge cases I would test next (if more time):**
-1. **Degenerate cases:**
-   - Owner with 0 minutes available → plan should have 0 entries
-   - Tasks with very long durations (500 min) for 120-min budget → should schedule what fits in order
-   - Tasks with identical priorities → verify consistent ordering (e.g., by task_id)
-
-2. **Recurring tasks:** If implemented, test that weekly tasks properly repeat
-3. **Time window preferences:** If implemented, test that tasks outside preferred hours are deprioritized
-4. **Multiple owners:** Test that each owner's tasks are independent
-5. **Constraint interactions:** Test conflicting rules (e.g., "no tasks after 18:00" but a required 2-hour task exists)
-
-**Current system status:** Ready for Phase 4 (Streamlit UI integration)
+I am 4/5 confident. All 38 tests pass and cover both happy paths and edge cases. I would next test what happens when all tasks are required but exceed the time budget, and whether recurring tasks with no due_time_optional behave correctly across multiple completions.
 
 ---
 
@@ -209,12 +109,12 @@ Created `tests/test_pawpal.py` with **30 pytest test cases** organized in 6 test
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+The algorithm is surprisingly elegant. The greedy approach with clear priority rules (required first, then priority level) produces intuitive schedules that users can understand. The test suite gave me confidence early — when all 38 tests passed on first run, I knew the core system was sound. The Streamlit UI integration was smooth because the backend was well-designed with clean separation between logic (pawpal_system.py) and presentation (app.py). I'm also satisfied with the conflict detection feature — it catches overlapping tasks without false positives, which builds user trust.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+I would add a "smart gap filling" feature where the scheduler tries to fill small gaps between large tasks with shorter tasks (e.g., fit a 15-min enrichment activity between two 30-min walks). The current greedy algorithm doesn't optimize time utilization. I would also add time window preferences — owners often have preferred times for walks (morning/evening) and I hardcoded 06:00-22:00 instead of making it dynamic. Finally, I'd implement recurring task history tracking so users can see patterns (e.g., "this dog gets walked 5x/week on average").
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+Designing for clarity beats designing for completeness. I kept the architecture simple (9 classes, clear responsibilities) rather than adding advanced features like constraint satisfaction solvers or multi-day scheduling. This simplicity made testing easier, explained reasoning clearer, and kept the system maintainable. Working with AI, I learned that specific prompts with rules and examples produce much better results than vague requests. "Here's my UML, review it" got useful feedback; "make a scheduler" would have produced over-engineered garbage. The best AI collaboration happens when I bring structure and the AI helps refine it.
