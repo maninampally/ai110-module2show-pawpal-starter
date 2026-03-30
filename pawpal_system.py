@@ -431,6 +431,127 @@ class Scheduler:
 				lines.append(f"  - {task.title}: No time remaining")
 		return "\n".join(lines)
 
+	def find_next_available_slot(
+		self, 
+		daily_plan: DailyPlan, 
+		task_duration_minutes: int,
+		start_search_time: time = time(6, 0),
+		end_of_day: time = time(22, 0),
+		constraint: DailyConstraint | None = None
+	) -> tuple[datetime, datetime] | None:
+		"""
+		Find the next available time slot that can fit a task of given duration.
+		
+		Args:
+			daily_plan: The DailyPlan with already scheduled entries
+			task_duration_minutes: Duration of the task to fit
+			start_search_time: Time to start searching (default 6:00 AM)
+			end_of_day: Time to stop searching (default 10:00 PM)
+			constraint: Optional DailyConstraint (for blocked times, time windows)
+		
+		Returns:
+			Tuple of (start_time, end_time) as datetime objects, or None if no slot found
+		"""
+		
+		# Sort scheduled entries by start time
+		sorted_entries = sorted(daily_plan.entries, key=lambda e: e.start_time)
+		
+		# Convert times to datetime for easier comparison
+		search_start = datetime.combine(daily_plan.date, start_search_time)
+		search_end = datetime.combine(daily_plan.date, end_of_day)
+		current_slot_start = search_start
+		
+		# Check gap before first scheduled entry
+		if sorted_entries:
+			first_entry_start = sorted_entries[0].start_time
+			if current_slot_start < first_entry_start:
+				if self._is_slot_valid(
+					current_slot_start, 
+					task_duration_minutes,
+					constraint,
+					daily_plan
+				):
+					slot_end = current_slot_start + timedelta(minutes=task_duration_minutes)
+					if slot_end <= first_entry_start:
+						return (current_slot_start, slot_end)
+		
+		# Check gaps between scheduled entries
+		for i in range(len(sorted_entries) - 1):
+			gap_start = sorted_entries[i].end_time
+			gap_end = sorted_entries[i + 1].start_time
+			gap_duration = int((gap_end - gap_start).total_seconds() / 60)
+			
+			if gap_duration >= task_duration_minutes:
+				if self._is_slot_valid(gap_start, task_duration_minutes, constraint, daily_plan):
+					slot_end = gap_start + timedelta(minutes=task_duration_minutes)
+					return (gap_start, slot_end)
+		
+		# Check gap after last scheduled entry
+		if sorted_entries:
+			last_entry_end = sorted_entries[-1].end_time
+			gap_duration = int((search_end - last_entry_end).total_seconds() / 60)
+			
+			if gap_duration >= task_duration_minutes:
+				if self._is_slot_valid(last_entry_end, task_duration_minutes, constraint, daily_plan):
+					slot_end = last_entry_end + timedelta(minutes=task_duration_minutes)
+					if slot_end <= search_end:
+						return (last_entry_end, slot_end)
+		
+		# If no entries scheduled, check entire day
+		if not sorted_entries:
+			if self._is_slot_valid(search_start, task_duration_minutes, constraint, daily_plan):
+				slot_end = search_start + timedelta(minutes=task_duration_minutes)
+				if slot_end <= search_end:
+					return (search_start, slot_end)
+		
+		return None
+
+	def _is_slot_valid(
+		self,
+		slot_start: datetime,
+		duration_minutes: int,
+		constraint: DailyConstraint | None,
+		daily_plan: DailyPlan
+	) -> bool:
+		"""
+		Check if a proposed slot is valid considering constraints and existing entries.
+		
+		Args:
+			slot_start: Proposed start time
+			duration_minutes: Duration of the task
+			constraint: Daily constraint rules
+			daily_plan: Current schedule to check for conflicts
+		
+		Returns:
+			True if the slot is valid, False otherwise
+		"""
+		slot_end = slot_start + timedelta(minutes=duration_minutes)
+		slot_start_time = slot_start.time()
+		slot_end_time = slot_end.time()
+		
+		# Check against existing entries for overlaps
+		for entry in daily_plan.entries:
+			if not (slot_end <= entry.start_time or slot_start >= entry.end_time):
+				return False  # Overlap detected
+		
+		# Check constraint's blocked times
+		if constraint:
+			for blocked_start, blocked_end in constraint.blocked_times:
+				if not (slot_end_time <= blocked_start or slot_start_time >= blocked_end):
+					return False  # Slot overlaps with blocked time
+			
+			# Check allowed time windows (if specified)
+			if constraint.allowed_time_windows:
+				window_allowed = False
+				for window_start, window_end in constraint.allowed_time_windows:
+					if slot_start_time >= window_start and slot_end_time <= window_end:
+						window_allowed = True
+						break
+				if not window_allowed:
+					return False
+		
+		return True
+
 
 # ============================================================================
 # LAYER 6: EXPLANATION & COMMUNICATION

@@ -118,3 +118,19 @@ I would add a "smart gap filling" feature where the scheduler tries to fill smal
 **c. Key takeaway**
 
 Designing for clarity beats designing for completeness. I kept the architecture simple (9 classes, clear responsibilities) rather than adding advanced features like constraint satisfaction solvers or multi-day scheduling. This simplicity made testing easier, explained reasoning clearer, and kept the system maintainable. Working with AI, I learned that specific prompts with rules and examples produce much better results than vague requests. "Here's my UML, review it" got useful feedback; "make a scheduler" would have produced over-engineered garbage. The best AI collaboration happens when I bring structure and the AI helps refine it.
+
+---
+
+## 6. Prompt Comparison
+
+**Task:** Implement `find_next_available_slot()` in Scheduler
+
+**Claude's approach:** Returns just the start datetime with an optional `start_from` parameter. Single loop through sorted entries checking gaps. Clean and reusable — caller decides what to do with the start time.
+
+**Copilot's approach:** Returns a (start, end) tuple. Explicitly handles three cases separately — before first entry, between entries, after last entry. More verbose but easier to follow step by step.
+
+**Which was better and why:**
+
+Copilot's version is more readable for a beginner — the three separate cases make the logic obvious. Claude's version is more Pythonic and reusable (the `start_from` parameter adds flexibility). For PawPal+ I chose Copilot's tuple return because it gives both start and end time in one call, which is what the UI needs to display a slot immediately.
+
+**Key lesson:** Both solutions are correct but optimize for different things — Claude for reusability, Copilot for explicitness. The choice depends on context: production code with multiple callers might prefer the reusable approach, while a focused feature (slot finding for display) benefits from explicit handling of all cases. This taught me that there's no universally "best" solution in software design — only trade-offs that serve your immediate goals.
