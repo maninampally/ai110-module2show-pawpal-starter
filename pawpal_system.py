@@ -90,9 +90,35 @@ class CareTask:
 		"""Check if task data is valid (has required fields)."""
 		return bool(self.title) and self.duration_minutes > 0
 
-	def mark_complete(self) -> None:
-		"""Record that task was completed."""
+	def mark_complete(self) -> CareTask | None:
+		"""Record that task was completed and return the next occurrence if recurring."""
 		self.completion_status = True
+		return self.create_next_occurrence()
+
+	def create_next_occurrence(self) -> CareTask | None:
+		"""Create the next occurrence of a recurring task."""
+		if self.frequency == "as-needed" or self.due_time_optional is None:
+			return None
+		
+		if self.frequency == "daily":
+			next_due_time = self.due_time_optional + timedelta(days=1)
+		elif self.frequency == "weekly":
+			next_due_time = self.due_time_optional + timedelta(days=7)
+		else:
+			return None
+		
+		return CareTask(
+			task_id=f"{self.task_id}_next",
+			title=self.title,
+			category=self.category,
+			duration_minutes=self.duration_minutes,
+			priority=self.priority,
+			due_time_optional=next_due_time,
+			frequency=self.frequency,
+			is_required=self.is_required,
+			notes=self.notes,
+			completion_status=False,
+		)
 
 	def update_task(self, **changes: Any) -> None:
 		"""Modify any task property."""
@@ -120,10 +146,16 @@ class TaskList:
 		self.tasks.append(task)
 
 	def edit_task(self, task_id: str, **changes: Any) -> None:
-		"""Modify an existing task."""
+		"""Modify an existing task. If marking complete, auto-add next occurrence if recurring."""
 		for task in self.tasks:
 			if task.task_id == task_id:
-				task.update_task(**changes)
+				if changes.get('completion_status') == True and not task.completion_status:
+					next_task = task.mark_complete()
+					task.update_task(**changes)
+					if next_task is not None:
+						self.add_task(next_task)
+				else:
+					task.update_task(**changes)
 				return
 
 	def remove_task(self, task_id: str) -> None:
@@ -138,6 +170,10 @@ class TaskList:
 	def get_required_tasks(self) -> list[CareTask]:
 		"""Return only tasks where is_required = True."""
 		return [task for task in self.tasks if task.is_required]
+
+	def get_tasks_by_status(self, completed: bool) -> list[CareTask]:
+		"""Return only tasks where completion_status matches the parameter."""
+		return [task for task in self.tasks if task.completion_status == completed]
 
 	def get_total_duration(self) -> int:
 		"""Sum total minutes needed for all tasks."""
@@ -326,6 +362,29 @@ class Scheduler:
 			key=lambda t: (not t.is_required, priority_order.get(t.priority, 3))
 		)
 
+	def sort_by_due_time(self, tasks: list[CareTask]) -> list[CareTask]:
+		"""Sort tasks so those with due_time_optional come first (earliest first),
+		then tasks without a due time sorted by priority."""
+		priority_order = {"high": 0, "medium": 1, "low": 2}
+		
+		# Separate tasks with due times and without
+		tasks_with_due = [t for t in tasks if t.due_time_optional is not None]
+		tasks_without_due = [t for t in tasks if t.due_time_optional is None]
+		
+		# Sort tasks with due time by the due_time_optional
+		tasks_with_due.sort(key=lambda t: t.due_time_optional)
+		
+		# Sort tasks without due time by priority
+		tasks_without_due.sort(key=lambda t: priority_order.get(t.priority, 3))
+		
+		# Combine: due times first, then no due times
+		return tasks_with_due + tasks_without_due
+
+	def filter_tasks_by_pet(self, tasks: list[CareTask], pet_name: str) -> list[CareTask]:
+		"""Return only tasks where title contains the pet name (case-insensitive)."""
+		pet_name_lower = pet_name.lower()
+		return [task for task in tasks if pet_name_lower in task.title.lower()]
+
 	def allocate_time_slots(self, tasks: list[CareTask], plan: DailyPlan) -> None:
 		"""Assign start/end times to each task."""
 		# This is handled in build_plan
@@ -338,6 +397,27 @@ class Scheduler:
 				if entry1.overlaps_with(entry2):
 					entry1.reason_selected += " [CONFLICT]"
 					entry2.reason_selected += " [CONFLICT]"
+
+	def detect_scheduling_conflicts(self, plan: DailyPlan) -> list[dict[str, str]]:
+		"""Detect overlapping tasks and return detailed conflict information."""
+		conflicts = []
+		
+		for i, entry1 in enumerate(plan.entries):
+			for entry2 in plan.entries[i + 1:]:
+				if entry1.overlaps_with(entry2):
+					time_1 = f"{entry1.start_time.strftime('%H:%M')} - {entry1.end_time.strftime('%H:%M')}"
+					time_2 = f"{entry2.start_time.strftime('%H:%M')} - {entry2.end_time.strftime('%H:%M')}"
+					
+					conflict_dict = {
+						"task_1": entry1.task.title,
+						"task_2": entry2.task.title,
+						"time_1": time_1,
+						"time_2": time_2,
+						"message": f"⚠️ Conflict: {entry1.task.title} overlaps with {entry2.task.title}"
+					}
+					conflicts.append(conflict_dict)
+		
+		return conflicts
 
 	def explain_decisions(self, plan: DailyPlan) -> str:
 		"""Generate reasoning for scheduling decisions."""

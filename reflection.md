@@ -73,7 +73,7 @@ Priority order:
 
 **b. Tradeoffs**
 
-**Tradeoff: Greedy scheduling vs. optimal allocation**
+**Tradeoff 1: Greedy scheduling vs. optimal allocation**
 
 The scheduler **greedily allocates tasks in ranked order** without trying to find the globally optimal fit (e.g., no backtracking if a large task blocks many small ones).
 
@@ -82,6 +82,10 @@ The scheduler **greedily allocates tasks in ranked order** without trying to fin
 - Greedy is simple to explain (transparency important for user trust)
 - For typical owner scenarios (6-10 daily tasks, 120-240 min budget), greedy works well
 - Future versions could use optimization if edge cases emerge
+
+**Tradeoff 2: Single-pass rank_tasks() vs. readability**
+
+The scheduler uses a single-pass sort for `rank_tasks()` which is efficient but slightly less readable than a two-pass approach. Copilot suggested a helper method alternative for better maintainability. I kept the current version because performance is negligible for small task lists and the logic is clear enough for this use case. The scheduler also only detects exact time overlaps, not near-conflicts — a future version could add minimum buffer time between tasks.
 
 ---
 

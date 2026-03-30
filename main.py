@@ -175,6 +175,30 @@ def main():
 
     print(f"✓ Total tasks to schedule: {len(all_tasks)}")
 
+    # Add conflict detection test tasks
+    conflict_task_1 = CareTask(
+        task_id="conflict_001",
+        title="Vet Appointment",
+        category="appointment",
+        duration_minutes=30,
+        priority="high",
+        is_required=True,
+        notes="Annual checkup for Buddy",
+    )
+
+    conflict_task_2 = CareTask(
+        task_id="conflict_002",
+        title="Grooming Session",
+        category="grooming",
+        duration_minutes=30,
+        priority="high",
+        is_required=True,
+        notes="Professional grooming",
+    )
+
+    combined_task_list.add_task(conflict_task_1)
+    combined_task_list.add_task(conflict_task_2)
+
     scheduler = Scheduler(strategy_name="priority-first")
     plan = scheduler.build_plan(combined_task_list, daily_constraint)
 
@@ -230,6 +254,25 @@ def main():
         print("✓ Plan is valid (no scheduling conflicts)")
     else:
         print("✗ Plan has conflicts detected")
+
+    # ========================================================================
+    # STEP 10: Detect and Report Conflicts
+    # ========================================================================
+    print()
+    print("=" * 70)
+    print("CONFLICT DETECTION".center(70))
+    print("=" * 70)
+
+    conflicts = scheduler.detect_scheduling_conflicts(plan)
+
+    if conflicts:
+        for conflict in conflicts:
+            print(f"⚠️ {conflict['message']}")
+            print(f"  {conflict['task_1']}: {conflict['time_1']}")
+            print(f"  {conflict['task_2']}: {conflict['time_2']}")
+            print()
+    else:
+        print("✓ No conflicts detected")
 
     print()
     print("=" * 70)

@@ -22,6 +22,14 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Smarter Scheduling
+
+PawPal+ includes four algorithmic features:
+- **Priority sorting** — required tasks scheduled first, then by high/medium/low
+- **Filtering** — filter tasks by completion status or pet name
+- **Recurring tasks** — daily/weekly tasks auto-generate next occurrence on completion
+- **Conflict detection** — overlapping tasks are flagged with warnings
+
 ## Getting started
 
 ### Setup
