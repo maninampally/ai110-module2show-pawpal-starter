@@ -4,7 +4,7 @@ Tests for core scheduling functionality using pytest.
 """
 
 import pytest
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pawpal_system import (
     Owner, Pet, CareTask, TaskList, DailyConstraint,
     Scheduler, ScheduleEntry, DailyPlan, PlanExplainer
@@ -150,14 +150,14 @@ class TestCareTask:
     def test_is_overdue_when_past_due(self, task_high):
         """Test that a task is overdue if current time is past due time."""
         past_time = datetime.now()
-        future_time = past_time + __import__('datetime').timedelta(hours=1)
+        future_time = past_time + timedelta(hours=1)
         task_high.due_time_optional = past_time
         assert task_high.is_overdue(future_time) is True
 
     def test_is_not_overdue_when_before_due(self, task_high):
         """Test that a task is not overdue if current time is before due time."""
         past_time = datetime.now()
-        future_time = past_time + __import__('datetime').timedelta(hours=1)
+        future_time = past_time + timedelta(hours=1)
         task_high.due_time_optional = future_time
         assert task_high.is_overdue(past_time) is False
 
@@ -419,3 +419,205 @@ class TestOwner:
         """Test that owner profile can be updated."""
         owner.update_profile(name="New Name")
         assert owner.name == "New Name"
+
+
+# ============================================================================
+# BEHAVIOR TESTS: SORTING (sort_by_due_time)
+# ============================================================================
+
+class TestSortByDueTime:
+    """Tests for sort_by_due_time() sorting behavior."""
+
+    @pytest.fixture
+    def task_with_early_due(self):
+        """Task with early due time."""
+        return CareTask(
+            task_id="task_early",
+            title="Early Task",
+            category="walk",
+            duration_minutes=20,
+            priority="low",
+            due_time_optional=datetime(2026, 3, 30, 8, 0),
+        )
+
+    @pytest.fixture
+    def task_with_late_due(self):
+        """Task with late due time."""
+        return CareTask(
+            task_id="task_late",
+            title="Late Task",
+            category="feeding",
+            duration_minutes=20,
+            priority="high",
+            due_time_optional=datetime(2026, 3, 30, 16, 0),
+        )
+
+    @pytest.fixture
+    def task_no_due_high_priority(self):
+        """Task without due time, high priority."""
+        return CareTask(
+            task_id="no_due_high",
+            title="No Due High",
+            category="enrichment",
+            duration_minutes=20,
+            priority="high",
+        )
+
+    @pytest.fixture
+    def task_no_due_low_priority(self):
+        """Task without due time, low priority."""
+        return CareTask(
+            task_id="no_due_low",
+            title="No Due Low",
+            category="enrichment",
+            duration_minutes=20,
+            priority="low",
+        )
+
+    def test_sort_by_due_time_earliest_first(self, task_with_early_due, task_with_late_due):
+        # Verifies that tasks with due times are sorted chronologically earliest-first
+        scheduler = Scheduler()
+        tasks = [task_with_late_due, task_with_early_due]
+        sorted_tasks = scheduler.sort_by_due_time(tasks)
+        assert sorted_tasks[0].due_time_optional == datetime(2026, 3, 30, 8, 0)
+        assert sorted_tasks[1].due_time_optional == datetime(2026, 3, 30, 16, 0)
+
+    def test_sort_by_due_time_then_priority(self, task_with_early_due, task_no_due_high_priority, task_no_due_low_priority):
+        # Verifies that tasks without due times follow timed tasks and are sorted by priority
+        scheduler = Scheduler()
+        tasks = [task_no_due_low_priority, task_with_early_due, task_no_due_high_priority]
+        sorted_tasks = scheduler.sort_by_due_time(tasks)
+        assert sorted_tasks[0] == task_with_early_due
+        assert sorted_tasks[1].priority == "high"
+        assert sorted_tasks[2].priority == "low"
+
+
+# ============================================================================
+# BEHAVIOR TESTS: RECURRING TASKS
+# ============================================================================
+
+class TestRecurringTasks:
+    """Tests for create_next_occurrence() and mark_complete() behavior."""
+
+    def test_marking_daily_task_returns_next_with_incremented_due(self):
+        # Verifies that marking a daily task complete returns a new task with due time + 1 day
+        original_due = datetime(2026, 3, 30, 8, 0)
+        task = CareTask(
+            task_id="daily_walk",
+            title="Walk Buddy",
+            category="walk",
+            duration_minutes=20,
+            priority="high",
+            due_time_optional=original_due,
+            frequency="daily",
+        )
+        next_task = task.mark_complete()
+        assert task.completion_status is True
+        assert next_task is not None
+        assert next_task.due_time_optional == datetime(2026, 3, 31, 8, 0)
+
+    def test_marking_as_needed_task_returns_none(self):
+        # Verifies that marking an "as-needed" task complete returns None (no recurrence)
+        task = CareTask(
+            task_id="bath",
+            title="Bath Time",
+            category="grooming",
+            duration_minutes=30,
+            priority="medium",
+            due_time_optional=datetime(2026, 3, 30, 10, 0),
+            frequency="as-needed",
+        )
+        next_task = task.mark_complete()
+        assert task.completion_status is True
+        assert next_task is None
+
+
+# ============================================================================
+# BEHAVIOR TESTS: CONFLICT DETECTION
+# ============================================================================
+
+class TestConflictDetection:
+    """Tests for detect_scheduling_conflicts() behavior."""
+
+    def test_overlapping_tasks_return_conflict_dict(self):
+        # Verifies that overlapping entries return conflict dict with task names and times
+        task1 = CareTask(task_id="t1", title="Walk", category="walk", duration_minutes=30, priority="high")
+        task2 = CareTask(task_id="t2", title="Feed", category="feeding", duration_minutes=20, priority="high")
+
+        entry1 = ScheduleEntry(
+            task=task1,
+            start_time=datetime(2026, 3, 30, 6, 0),
+            end_time=datetime(2026, 3, 30, 6, 30),
+        )
+        entry2 = ScheduleEntry(
+            task=task2,
+            start_time=datetime(2026, 3, 30, 6, 15),
+            end_time=datetime(2026, 3, 30, 6, 45),
+        )
+        plan = DailyPlan(date=date(2026, 3, 30))
+        plan.add_entry(entry1)
+        plan.add_entry(entry2)
+
+        scheduler = Scheduler()
+        conflicts = scheduler.detect_scheduling_conflicts(plan)
+        assert len(conflicts) == 1
+        assert conflicts[0]["task_1"] == "Walk"
+        assert conflicts[0]["task_2"] == "Feed"
+
+    def test_back_to_back_tasks_not_flagged_as_conflict(self):
+        # Verifies that adjacent tasks (one ends exactly when next starts) are NOT conflicts
+        task1 = CareTask(task_id="t1", title="Walk", category="walk", duration_minutes=30, priority="high")
+        task2 = CareTask(task_id="t2", title="Feed", category="feeding", duration_minutes=20, priority="high")
+
+        entry1 = ScheduleEntry(
+            task=task1,
+            start_time=datetime(2026, 3, 30, 6, 0),
+            end_time=datetime(2026, 3, 30, 6, 30),
+        )
+        entry2 = ScheduleEntry(
+            task=task2,
+            start_time=datetime(2026, 3, 30, 6, 30),
+            end_time=datetime(2026, 3, 30, 6, 50),
+        )
+        plan = DailyPlan(date=date(2026, 3, 30))
+        plan.add_entry(entry1)
+        plan.add_entry(entry2)
+
+        scheduler = Scheduler()
+        conflicts = scheduler.detect_scheduling_conflicts(plan)
+        assert len(conflicts) == 0
+
+
+# ============================================================================
+# BEHAVIOR TESTS: FILTERING (get_tasks_by_status)
+# ============================================================================
+
+class TestFilteringByStatus:
+    """Tests for get_tasks_by_status() filtering behavior."""
+
+    def test_get_completed_tasks_returns_only_completed(self):
+        # Verifies that get_tasks_by_status(True) returns only completed tasks
+        task_list = TaskList()
+        task1 = CareTask(task_id="t1", title="Walk", category="walk", duration_minutes=20, priority="high")
+        task2 = CareTask(task_id="t2", title="Feed", category="feeding", duration_minutes=15, priority="high")
+
+        task_list.add_task(task1)
+        task_list.add_task(task2)
+        task1.completion_status = True
+
+        completed = task_list.get_tasks_by_status(completed=True)
+        assert len(completed) == 1
+        assert completed[0].task_id == "t1"
+
+    def test_get_completed_tasks_empty_when_none_complete(self):
+        # Verifies that get_tasks_by_status(True) returns empty list when no tasks are complete
+        task_list = TaskList()
+        task1 = CareTask(task_id="t1", title="Walk", category="walk", duration_minutes=20, priority="high")
+        task2 = CareTask(task_id="t2", title="Feed", category="feeding", duration_minutes=15, priority="high")
+
+        task_list.add_task(task1)
+        task_list.add_task(task2)
+
+        completed = task_list.get_tasks_by_status(completed=True)
+        assert len(completed) == 0
+        assert isinstance(completed, list)
